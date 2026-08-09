@@ -12,7 +12,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
   if (!authorized(req)) return res.status(401).json({ error: 'unauthorized' });
-  const qstash = process.env.QSTASH_TOKEN;
+  const qstash = process.env.QSTASH_TOKEN || process.env.US_EAST_1_QSTASH_TOKEN || process.env.EU_CENTRAL_1_QSTASH_TOKEN;
+  const qstashUrl = (process.env.QSTASH_URL || process.env.US_EAST_1_QSTASH_URL || process.env.EU_CENTRAL_1_QSTASH_URL || 'https://qstash-us-east-1.upstash.io').replace(/\/$/, '');
   const access = process.env.ACCESS_TOKEN;
   if (!qstash) return res.status(500).json({ error: 'QSTASH_TOKEN is missing' });
   if (!access) return res.status(500).json({ error: 'ACCESS_TOKEN is missing' });
@@ -21,7 +22,7 @@ export default async function handler(req, res) {
     const results = [];
     const encoded = encodeURIComponent(DESTINATION);
     for (const s of schedules) {
-      const r = await fetch(`https://qstash.upstash.io/v2/schedules/${encoded}`, {
+      const r = await fetch(`${qstashUrl}/v2/schedules/${encoded}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${qstash}`,
@@ -39,7 +40,7 @@ export default async function handler(req, res) {
       if (!r.ok) throw new Error(`QStash ${s.id}: HTTP ${r.status} ${text}`);
       results.push({ id: s.id, cron: s.cron, response: data });
     }
-    return res.status(200).json({ ok: true, schedules: results });
+    return res.status(200).json({ ok: true, regionUrl: qstashUrl, schedules: results });
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : 'schedule setup failed' });
   }
