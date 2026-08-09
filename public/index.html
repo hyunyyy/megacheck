@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<title>Megapass Guard</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b0d12;color:#f4f6fb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:620px;margin:0 auto;padding:26px 18px 60px}.card{background:#141821;border:1px solid #252b37;border-radius:18px;padding:20px;margin:14px 0}.muted{color:#9ba6b5}.big{font-size:42px;font-weight:800;letter-spacing:-1.5px}.row{display:flex;justify-content:space-between;gap:16px;margin:10px 0}.bar{height:14px;background:#272d38;border-radius:999px;overflow:hidden}.fill{height:100%;background:#f4f6fb}.input{width:100%;padding:12px;border-radius:10px;border:1px solid #343c4a;background:#0f1218;color:#fff}.small{font-size:13px;line-height:1.55}.err{font-weight:700;color:#ff8d8d}.ok{color:#8fe3a3}.buttons{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid #343c4a;background:#202632;color:#fff;border-radius:11px;padding:11px 14px;font-weight:700}.btn.primary{background:#f4f6fb;color:#101318}.btn:disabled{opacity:.45}.pill{display:inline-block;padding:4px 8px;border:1px solid #343c4a;border-radius:999px;font-size:12px}.sep{height:1px;background:#252b37;margin:16px 0}
+</style>
+</head>
+<body><main class="wrap">
+<h1>Megapass Guard</h1><p class="muted">Mac에서 측정하고, 서버가 기억하고, Android로 경고합니다.</p>
+<div class="card"><label class="small muted">ACCESS_TOKEN</label><input id="token" class="input" type="password" placeholder="Vercel 환경변수와 같은 토큰"><p id="auth" class="small"></p></div>
+<div class="card">
+<div class="row"><span class="muted">오늘</span><strong id="date">-</strong></div>
+<div class="big"><span id="content">0:00</span> <span class="muted" style="font-size:18px">/ 60:00</span></div>
+<div class="bar"><div id="fill" class="fill" style="width:0%"></div></div>
+<p id="status">⏳ 아직 미완료</p>
+<div class="row"><span class="muted">실제 재생</span><span id="real">0:00</span></div>
+<div class="row"><span class="muted">최근 배속</span><span id="rate">-</span></div>
+<div class="row"><span class="muted">감지 방식</span><span id="method">-</span></div>
+<div class="row"><span class="muted">최근 신호</span><span id="signal">-</span></div>
+<div class="row"><span class="muted">서버 동기화</span><span id="synced">-</span></div>
+</div>
+<div class="card">
+<div class="row"><strong>Android 푸시</strong><span id="pushPill" class="pill">미설정</span></div>
+<p class="small muted">허용하면 이 페이지를 닫아도 서버가 시스템 알림을 보낼 수 있습니다.</p>
+<div class="buttons">
+<button id="enablePush" class="btn primary">알림 켜기</button>
+<button id="testPush" class="btn" disabled>테스트 알림</button>
+<button id="installSchedules" class="btn" disabled>22시·23시·23:20 스케줄 설치</button>
+<button id="disablePush" class="btn" disabled>알림 끄기</button>
+</div>
+<p id="pushMsg" class="small"></p>
+<div class="sep"></div>
+<p class="small muted">Android Chrome에서는 홈 화면에 추가해두면 앱처럼 열 수 있습니다. 푸시는 Chrome의 서비스 워커가 받습니다.</p>
+<button id="installApp" class="btn" style="display:none">홈 화면에 설치</button>
+</div>
+<p class="small muted">보조 기록용입니다. 메가스터디의 최종 환급 판정 자체를 보증하지 않습니다.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=s=>{s=Math.max(0,Math.floor(Number(s)||0));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`};
+const tokenEl=$('token'); tokenEl.value=localStorage.getItem('megapassToken')||'';
+let authOK=false, swReg=null, installPrompt=null;
+function token(){return tokenEl.value.trim()}
+function headers(json=false){const h={Authorization:`Bearer ${token()}`};if(json)h['Content-Type']='application/json';return h}
+function setPush(msg, ok=false){$('pushMsg').textContent=msg;$('pushMsg').className='small '+(ok?'ok':'')}
+async function load(){const t=token();if(!t){authOK=false;$('auth').textContent='토큰을 입력하세요.';return}try{const r=await fetch('/api/sync',{headers:headers(),cache:'no-store'});if(!r.ok)throw new Error(r.status===401?'토큰이 틀렸습니다.':`HTTP ${r.status}`);const {state:s}=await r.json();authOK=true;$('auth').textContent='✅ 인증됨 · 서버 연결 정상';$('auth').className='small ok';await refreshPushState();if(!s)return;$('date').textContent=s.date||'-';$('content').textContent=fmt(s.contentSeconds);$('real').textContent=fmt(s.realSeconds);$('rate').textContent=s.playbackRate?`${s.playbackRate}×`:'-';$('method').textContent=s.detectionMethod||'-';$('signal').textContent=s.lastSignalAt?new Date(s.lastSignalAt).toLocaleString('ko-KR'):'-';$('synced').textContent=s.syncedAt?new Date(s.syncedAt).toLocaleString('ko-KR'):'-';$('fill').style.width=`${Math.min(100,(Number(s.contentSeconds)||0)/36)}%`;$('status').textContent=s.completed?'✅ 조건 충족 추정':'⏳ 아직 미완료';}catch(e){authOK=false;$('auth').textContent=e.message||'불러오기 실패';$('auth').className='small err'}}
+tokenEl.addEventListener('input',()=>localStorage.setItem('megapassToken',tokenEl.value));tokenEl.addEventListener('change',load);
+
+function b64ToBytes(base64){const pad='='.repeat((4-base64.length%4)%4);const s=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(s);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))}
+async function ensureSW(){if(!('serviceWorker' in navigator))throw new Error('이 브라우저는 Service Worker를 지원하지 않습니다.');if(!swReg)swReg=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;return swReg}
+async function refreshPushState(){if(!authOK)return;try{const reg=await ensureSW();const sub=await reg.pushManager.getSubscription();const on=Boolean(sub)&&Notification.permission==='granted';$('pushPill').textContent=on?'켜짐 ✓':Notification.permission==='denied'?'차단됨':'미설정';$('enablePush').disabled=on;$('testPush').disabled=!on;$('disablePush').disabled=!on;$('installSchedules').disabled=!on;}catch{}}
+$('enablePush').onclick=async()=>{try{if(!token())throw new Error('ACCESS_TOKEN부터 입력하세요.');const perm=await Notification.requestPermission();if(perm!=='granted')throw new Error('알림 권한이 허용되지 않았습니다.');const reg=await ensureSW();const cfg=await fetch('/api/push-config',{headers:headers()});if(!cfg.ok)throw new Error(`push-config HTTP ${cfg.status}`);const {publicKey}=await cfg.json();let sub=await reg.pushManager.getSubscription();if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToBytes(publicKey)});const r=await fetch('/api/push-subscribe',{method:'POST',headers:headers(true),body:JSON.stringify({subscription:sub.toJSON()})});if(!r.ok)throw new Error(`구독 저장 HTTP ${r.status}`);setPush('✅ Android 푸시 구독 완료. 테스트 알림을 눌러보세요.',true);await refreshPushState()}catch(e){setPush(e.message||'알림 설정 실패')}};
+$('testPush').onclick=async()=>{try{const r=await fetch('/api/push-test',{method:'POST',headers:headers()});const j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);if(j.reason==='no subscription')throw new Error('서버에 구독이 없습니다. 알림을 다시 켜세요.');setPush('🔔 테스트 푸시를 전송했습니다.',true)}catch(e){setPush(e.message||'테스트 실패')}};
+$('disablePush').onclick=async()=>{try{const reg=await ensureSW();const sub=await reg.pushManager.getSubscription();if(sub)await sub.unsubscribe();await fetch('/api/push-subscribe',{method:'DELETE',headers:headers()});setPush('알림 구독을 해제했습니다.');await refreshPushState()}catch(e){setPush(e.message||'해제 실패')}};
+$('installSchedules').onclick=async()=>{try{setPush('QStash 스케줄 생성 중…');const r=await fetch('/api/setup-schedules',{method:'POST',headers:headers()});const j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);setPush('✅ 매일 22:00 / 23:00 / 23:20(KST) 경고 스케줄 설치 완료.',true)}catch(e){setPush(e.message||'스케줄 설치 실패')}};
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('installApp').style.display='inline-block'});$('installApp').onclick=async()=>{if(!installPrompt)return;installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;$('installApp').style.display='none'};
+setInterval(load,5000);ensureSW().then(refreshPushState).catch(()=>{});load();
+</script></body></html>
