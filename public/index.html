@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Megapass Guard</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b0d12;color:#f4f6fb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:620px;margin:0 auto;padding:32px 18px}.card{background:#141821;border:1px solid #252b37;border-radius:18px;padding:22px;margin:16px 0}.muted{color:#9ba6b5}.big{font-size:42px;font-weight:800;letter-spacing:-1.5px}.row{display:flex;justify-content:space-between;gap:16px;margin:10px 0}.bar{height:14px;background:#272d38;border-radius:999px;overflow:hidden}.fill{height:100%;background:#f4f6fb}.input{width:100%;padding:12px;border-radius:10px;border:1px solid #343c4a;background:#0f1218;color:#fff}.small{font-size:13px;line-height:1.55}.err{font-weight:700}</style>
+</head>
+<body><main class="wrap">
+<h1>Megapass Guard</h1><p class="muted">확장프로그램 ↔ 서버 ↔ 스마트폰 동기화 테스트</p>
+<div class="card"><label class="small muted">ACCESS_TOKEN</label><input id="token" class="input" type="password" placeholder="Vercel 환경변수와 같은 토큰"><p id="err" class="err"></p></div>
+<div class="card">
+<div class="row"><span class="muted">오늘</span><strong id="date">-</strong></div>
+<div class="big"><span id="content">0:00</span> <span class="muted" style="font-size:18px">/ 60:00</span></div>
+<div class="bar"><div id="fill" class="fill" style="width:0%"></div></div>
+<p id="status">⏳ 아직 미완료</p>
+<div class="row"><span class="muted">실제 재생</span><span id="real">0:00</span></div>
+<div class="row"><span class="muted">최근 배속</span><span id="rate">-</span></div>
+<div class="row"><span class="muted">감지 방식</span><span id="method">-</span></div>
+<div class="row"><span class="muted">최근 신호</span><span id="signal">-</span></div>
+<div class="row"><span class="muted">서버 동기화</span><span id="synced">-</span></div>
+</div>
+<p class="small muted">보조 기록용입니다. 메가스터디의 최종 환급 판정 자체를 보증하지 않습니다.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id); const fmt=s=>{s=Math.max(0,Math.floor(Number(s)||0));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`};
+const tokenEl=$('token'); tokenEl.value=localStorage.getItem('megapassToken')||''; tokenEl.oninput=()=>localStorage.setItem('megapassToken',tokenEl.value);
+async function load(){const t=tokenEl.value.trim();if(!t)return;try{const r=await fetch('/api/sync',{headers:{Authorization:`Bearer ${t}`},cache:'no-store'});if(!r.ok)throw new Error(r.status===401?'토큰이 틀렸습니다.':`HTTP ${r.status}`);const {state:s}=await r.json();$('err').textContent='';if(!s)return;$('date').textContent=s.date||'-';$('content').textContent=fmt(s.contentSeconds);$('real').textContent=fmt(s.realSeconds);$('rate').textContent=s.playbackRate?`${s.playbackRate}×`:'-';$('method').textContent=s.detectionMethod||'-';$('signal').textContent=s.lastSignalAt?new Date(s.lastSignalAt).toLocaleString('ko-KR'):'-';$('synced').textContent=s.syncedAt?new Date(s.syncedAt).toLocaleString('ko-KR'):'-';$('fill').style.width=`${Math.min(100,(Number(s.contentSeconds)||0)/36)}%`;$('status').textContent=s.completed?'✅ 조건 충족 추정':'⏳ 아직 미완료';}catch(e){$('err').textContent=e.message||'불러오기 실패'}}
+setInterval(load,5000); tokenEl.addEventListener('change',load); load();
+</script></body></html>
